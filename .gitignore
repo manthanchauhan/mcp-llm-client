@@ -2,3 +2,6 @@
 /__debug_bin645216057
 /app.log
 /go.sum
+/.env
+__debug_bin.*
+__debug_bin3276141062

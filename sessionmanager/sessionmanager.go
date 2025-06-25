@@ -27,7 +27,36 @@ func (sm *SessionManager) EnrichSessionData(sid int64, info *map[string]any) err
 	sd := sm.GetSession(sid)
 
 	if rc, ok := (*info)["request_category"]; ok {
-		*sd.CustomerRequestCategory = rc.(string)
+		rcStr := rc.(string)
+		(*sd).CustomerRequestCategory = &rcStr
+	}
+
+	if ud, ok := (*info)["user_data"]; ok {
+		if (*sd).UserData == nil {
+			(*sd).UserData = &SessionUserData{}
+		}
+
+		udMap := ud.(map[string]any)
+
+		if mobile, ok2 := udMap["USER_MOBILE_NUMBER"]; ok2 {
+			mobileStr := mobile.(string)
+			(*sd).UserData.Mobile = &mobileStr
+		}
+
+		if email, ok2 := udMap["email"]; ok2 {
+			emailStr := email.(string)
+			(*sd).UserData.Email = &emailStr
+		}
+
+		if fn, ok2 := udMap["first_name"]; ok2 {
+			fnStr := fn.(string)
+			(*sd).UserData.FirstName = &fnStr
+		}
+
+		if ln, ok2 := udMap["last_name"]; ok2 {
+			lnStr := ln.(string)
+			(*sd).UserData.LastName = &lnStr
+		}
 	}
 
 	return nil

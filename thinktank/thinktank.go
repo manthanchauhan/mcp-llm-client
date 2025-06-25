@@ -18,11 +18,27 @@ func (tt *ThinkTank) Converse(userInput string, sid int64) (string, error) {
 	sd := sm.GetSession(sid)
 
 	if sd.CustomerRequestCategory == nil {
-		return tt.converseToIdentifyCustomerRequestCategory(userInput, sd)
+		rcFound, llmReply, err := tt.converseToIdentifyCustomerRequestCategory(userInput, sd)
+		if err != nil {
+			return "", err
+		}
+
+		if !rcFound {
+			return llmReply, nil
+		}
+
+		userInput = ""
 	}
 
 	if sd.UserData == nil || sd.UserData.Id == nil {
-		return tt.converseToIdentifyUser(userInput, sd)
+		udFound, llmReply, err := tt.converseToIdentifyUser(userInput, sd)
+		if err != nil {
+			return "", err
+		}
+
+		if !udFound {
+			return llmReply, nil
+		}
 	}
 
 	return "", nil
@@ -47,10 +63,10 @@ func (tt *ThinkTank) StartConversation(sid int64) (string, error) {
 	return greet, nil
 }
 
-func (tt *ThinkTank) converseToIdentifyCustomerRequestCategory(userInput string, sd *sessionmanager.SessionData) (string, error) {
+func (tt *ThinkTank) converseToIdentifyCustomerRequestCategory(userInput string, sd *sessionmanager.SessionData) (bool, string, error) {
 	convHist := sd.ConversationHistory
 
-	userMsg := dto.Message{Role: "User", Content: userInput}
+	userMsg := dto.Message{Role: "user", Content: userInput}
 
 	if convHist == nil {
 		convHist = []dto.Message{userMsg}
@@ -68,12 +84,14 @@ func (tt *ThinkTank) converseToIdentifyCustomerRequestCategory(userInput string,
 
 	If VALID request category is identified: Respond in this EXACT JSON: {"info_extraction": {"request_category": <request-category>}}
 	Else: Ask the user what he needs help with and respond in this EXACT JSON: {"reply_to_human": <reply-to-human>}
+
+	If user is unable to decide, give options to the user
 	`
 
 	llmResp, convHist, err := llm.GetLLM().SendSystemMessage(systMsg, convHist)
 
 	if err != nil {
-		return "", err
+		return false, "", err
 	}
 
 	sd.SetConversationHistory(convHist)
@@ -85,26 +103,71 @@ func (tt *ThinkTank) converseToIdentifyCustomerRequestCategory(userInput string,
 
 		if info != nil {
 			sessionmanager.GetOrCreateSessionManager().EnrichSessionData(sd.SessionId, info)
+			return true, "", nil
 		}
 
 		userReply := assitantReply.ReplyToUser
 
 		if userReply != nil {
-			return *userReply, nil
+			return false, *userReply, nil
 		}
 
-		return "", fmt.Errorf("no reply for user form llm")
+		return false, "", fmt.Errorf("no reply for user form llm")
 	}
 
-	return "", err
+	return false, "", err
 }
 
-func (tt *ThinkTank) converseToIdentifyUser(userInput string, sd *sessionmanager.SessionData) (string, error) {
-	if sd.UserData == nil || sd.UserData.Mobile == nil {
-		return "", nil
+func (tt *ThinkTank) converseToIdentifyUser(userInput string, sd *sessionmanager.SessionData) (bool, string, error) {
+	convHist := sd.ConversationHistory
+
+	if userInput != "" {
+		userMsg := dto.Message{Role: "user", Content: userInput}
+
+		if convHist == nil {
+			convHist = []dto.Message{userMsg}
+		} else {
+			convHist = append(convHist, userMsg)
+		}
 	}
 
-	return "", nil
+	systMsg := `From the conversation extract the following fields,
+	
+	1. USER_MOBILE_NUMBER
+
+	If ANY of above fields is identified: Respond in this EXACT JSON: {"info_extraction": {"user_data": {<field-name-1>: <field-value-1>}}}
+	Else: Ask the user to provide any of the above data and respond in this EXACT JSON: {"reply_to_human": <reply-to-human>}
+	`
+
+	// filteredConvHist := llm.FilterSystemMessagesExceptInitMsg(convHist)
+	llmResp, convHist, err := llm.GetLLM().SendSystemMessage(systMsg, convHist)
+
+	if err != nil {
+		return false, "", err
+	}
+
+	sd.SetConversationHistory(convHist)
+
+	var assitantReply dto.AssistantReply
+
+	if err := json.Unmarshal([]byte(llmResp), &assitantReply); err == nil {
+		info := assitantReply.InfoExtraction
+
+		if info != nil {
+			sessionmanager.GetOrCreateSessionManager().EnrichSessionData(sd.SessionId, info)
+			return true, "", nil
+		}
+
+		userReply := assitantReply.ReplyToUser
+
+		if userReply != nil {
+			return false, *userReply, nil
+		}
+
+		return false, "", fmt.Errorf("no reply for user form llm")
+	}
+
+	return false, "", err
 }
 
 func GetThinkTank() *ThinkTank {

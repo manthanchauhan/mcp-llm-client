@@ -5,17 +5,25 @@ import (
 	"log"
 	"mcp-llm-client/cli"
 	"mcp-llm-client/llm"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	fmt.Println("Staring mcp client ...")
-
-	_, _, err := llm.Init()
+	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Failed to connect to llama.cpp server:", err)
+		log.Fatal("Error loading .env file")
 	}
 
-	fmt.Println("Successfully connected to llama.cpp!")
+	fmt.Println("Staring mcp client ...")
+
+	_, _, err = llm.Init()
+	if err != nil {
+		log.Fatal("Failed to connect to LLM server:", err)
+	}
+
+	modelName := llm.GetLLM().ModelName
+	fmt.Println("Successfully connected to LLM model " + modelName)
 
 	cli.StartChat()
 }

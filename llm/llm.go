@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"mcp-llm-client/llm/dto"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,7 @@ var jsonLogger = slog.New(slog.NewJSONHandler(rotator, nil))
 var singletonLLM *LLM
 
 type LLM struct {
+	ModelName string
 }
 
 func (llm *LLM) StartConversation() {
@@ -26,14 +29,14 @@ func (llm *LLM) StartConversation() {
 }
 func (l *LLM) SendSystemMessage(message string, conversation []dto.Message) (string, []dto.Message, error) {
 	sysMsg := dto.Message{
-		Role:    "System",
+		Role:    "system",
 		Content: message,
 	}
 
 	conversation = append(conversation, sysMsg)
 
 	chatReq := dto.ChatRequest{
-		Model:     MODELNAME,
+		Model:     os.Getenv("MODEL_NAME"),
 		Messages:  conversation,
 		MaxTokens: MAXTOKENS,
 	}
@@ -44,13 +47,13 @@ func (l *LLM) SendSystemMessage(message string, conversation []dto.Message) (str
 		return "", conversation, err
 	}
 
-	conversation = append(conversation, dto.Message{Role: "Assistant", Content: reply})
+	conversation = append(conversation, dto.Message{Role: "assistant", Content: reply})
 	return reply, conversation, nil
 }
 
 func GetLLM() *LLM {
 	if singletonLLM == nil {
-		singletonLLM = &LLM{}
+		singletonLLM = &LLM{ModelName: os.Getenv("MODEL_NAME")}
 	}
 
 	return singletonLLM
@@ -69,14 +72,14 @@ func Init() (string, []dto.Message, error) {
 
 func SendSystemMessage(message string, conversation []dto.Message) (string, []dto.Message, error) {
 	sysMsg := dto.Message{
-		Role:    "System",
+		Role:    "system",
 		Content: message,
 	}
 
 	conversation = append(conversation, sysMsg)
 
 	chatReq := dto.ChatRequest{
-		Model:     MODELNAME,
+		Model:     os.Getenv("MODEL_NAME"),
 		Messages:  conversation,
 		MaxTokens: MAXTOKENS,
 	}
@@ -87,7 +90,7 @@ func SendSystemMessage(message string, conversation []dto.Message) (string, []dt
 		return "", conversation, err
 	}
 
-	conversation = append(conversation, dto.Message{Role: "Assistant", Content: reply})
+	conversation = append(conversation, dto.Message{Role: "assistant", Content: reply})
 	return reply, conversation, nil
 }
 
@@ -95,20 +98,20 @@ func SendUserMessage(message string, conversation []dto.Message) (string, []dto.
 	conversation = append(conversation, dto.Message{Role: "user", Content: message})
 
 	chatReq := dto.ChatRequest{
-		Model:     MODELNAME,
+		Model:     os.Getenv("MODEL_NAME"),
 		Messages:  conversation,
 		MaxTokens: MAXTOKENS,
 	}
 
 	reply, err := getChatCompletion(chatReq)
 
-	conversation = append(conversation, dto.Message{Role: "Assistant", Content: reply})
+	conversation = append(conversation, dto.Message{Role: "assistant", Content: reply})
 	return reply, conversation, err
 }
 
 func GetChatCompletion(messages []dto.Message) (string, error) {
 	chatReq := dto.ChatRequest{
-		Model:     MODELNAME,
+		Model:     os.Getenv("MODEL_NAME"),
 		Messages:  messages,
 		MaxTokens: MAXTOKENS,
 	}
@@ -137,21 +140,37 @@ func getChatCompletionCore(chatReq dto.ChatRequest) (string, error) {
 
 	// Send request
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(
-		MODELURL+"/v1/chat/completions",
-		"application/json",
-		bytes.NewBuffer(jsonData),
-	)
+
+	modelApiKey := os.Getenv("MODEL_API_KEY")
+	modelUrl := os.Getenv("MODEL_URL")
+
+	req, err := http.NewRequest("POST", modelUrl+"/v1/chat/completions", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Length", strconv.Itoa(len(jsonData)))
+	req.Header.Set("Host", "localhost:8080")
+
+	if modelApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+modelApiKey)
+	}
+
+	// Make the request
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
+
+	jsonLogger.Info("", "Chat Response", body)
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
