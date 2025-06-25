@@ -10,12 +10,12 @@ import (
 func main() {
 	fmt.Println("Staring mcp client ...")
 
-	greet, conversation, err := llm.Init()
+	_, _, err := llm.Init()
 	if err != nil {
 		log.Fatal("Failed to connect to llama.cpp server:", err)
 	}
 
 	fmt.Println("Successfully connected to llama.cpp!")
 
-	cli.StartChat(greet, conversation)
+	cli.StartChat()
 }

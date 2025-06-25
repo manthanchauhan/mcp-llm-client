@@ -3,17 +3,28 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"mcp-llm-client/llm"
-	"mcp-llm-client/llm/dto"
+	"mcp-llm-client/sessionmanager"
+	"mcp-llm-client/thinktank"
 	"os"
 )
 
-func StartChat(greet string, conversation []dto.Message) {
+var sessionId int64
+
+func StartChat() {
 	fmt.Println("---------------------------------------------------------------")
-	fmt.Printf("AI: %v\n", greet)
-	fmt.Print("\n")
 
 	scanner := bufio.NewScanner(os.Stdin)
+	sessionData := sessionmanager.GetOrCreateSessionManager().CreateSession()
+	sessionId = sessionData.SessionId
+
+	thinkTank := thinktank.GetThinkTank()
+
+	greet, err := thinkTank.StartConversation(sessionId)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("AI: ", greet)
 
 	for {
 		fmt.Print("User: ")
@@ -35,7 +46,7 @@ func StartChat(greet string, conversation []dto.Message) {
 
 		aiResponse := ""
 		var err error
-		aiResponse, conversation, err = llm.SendUserMessage(userInput, conversation)
+		aiResponse, err = thinkTank.Converse(userInput, sessionData.SessionId)
 
 		if err != nil {
 			panic(err)

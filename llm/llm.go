@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"mcp-llm-client/llm/dto"
-	"mcp-llm-client/tool"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +16,45 @@ import (
 
 var rotator = &lumberjack.Logger{Filename: "app.log", MaxSize: 10}
 var jsonLogger = slog.New(slog.NewJSONHandler(rotator, nil))
+var singletonLLM *LLM
+
+type LLM struct {
+}
+
+func (llm *LLM) StartConversation() {
+
+}
+func (l *LLM) SendSystemMessage(message string, conversation []dto.Message) (string, []dto.Message, error) {
+	sysMsg := dto.Message{
+		Role:    "System",
+		Content: message,
+	}
+
+	conversation = append(conversation, sysMsg)
+
+	chatReq := dto.ChatRequest{
+		Model:     MODELNAME,
+		Messages:  conversation,
+		MaxTokens: MAXTOKENS,
+	}
+
+	reply, err := getChatCompletion(chatReq)
+
+	if err != nil {
+		return "", conversation, err
+	}
+
+	conversation = append(conversation, dto.Message{Role: "Assistant", Content: reply})
+	return reply, conversation, nil
+}
+
+func GetLLM() *LLM {
+	if singletonLLM == nil {
+		singletonLLM = &LLM{}
+	}
+
+	return singletonLLM
+}
 
 func Init() (string, []dto.Message, error) {
 	// fmt.Printf("System Message: %v", SystemMsg)
@@ -35,11 +73,6 @@ func SendSystemMessage(message string, conversation []dto.Message) (string, []dt
 		Content: message,
 	}
 
-	// greetMsg := dto.Message{
-	// 	Role:    "System",
-	// 	Content: "Say hi to the user",
-	// }
-
 	conversation = append(conversation, sysMsg)
 
 	chatReq := dto.ChatRequest{
@@ -50,16 +83,11 @@ func SendSystemMessage(message string, conversation []dto.Message) (string, []dt
 
 	reply, err := getChatCompletion(chatReq)
 
-	for pendingRetry := 3; err != nil && pendingRetry > 0; pendingRetry -= 1 {
-		reply, err = getChatCompletion(chatReq)
+	if err != nil {
+		return "", conversation, err
 	}
 
 	conversation = append(conversation, dto.Message{Role: "Assistant", Content: reply})
-
-	// if reply == "" {
-	// 	return SendSystemMessage("The response does not follow the mentioned JSON format", conversation)
-	// }
-
 	return reply, conversation, nil
 }
 
@@ -89,6 +117,16 @@ func GetChatCompletion(messages []dto.Message) (string, error) {
 }
 
 func getChatCompletion(chatReq dto.ChatRequest) (string, error) {
+	reply, err := getChatCompletionCore(chatReq)
+
+	for pendingRetry := 3; err != nil && pendingRetry > 0; pendingRetry -= 1 {
+		reply, err = getChatCompletionCore(chatReq)
+	}
+
+	return reply, err
+}
+
+func getChatCompletionCore(chatReq dto.ChatRequest) (string, error) {
 	// Convert to JSON
 	jsonData, err := json.Marshal(chatReq)
 	if err != nil {
@@ -136,31 +174,9 @@ func getChatCompletion(chatReq dto.ChatRequest) (string, error) {
 	replyStr = strings.Trim(replyStr, " ")
 	replyStr = strings.Trim(replyStr, "<|Assistant|>")
 
-	var assitantReply dto.AssistantReply
-
-	if err := json.Unmarshal([]byte(replyStr), &assitantReply); err == nil {
-		functionCall := assitantReply.FunctionCall
-
-		if functionCall == nil {
-			return assitantReply.ReplyToUser, nil
-		} else {
-
-		}
-	}
-
-	return "", err
+	return replyStr, nil
 }
 
 func createSystemMessage() string {
-	systemMsg := INITMESSAGE
-
-	toolsDesc := ""
-
-	if json_, err := json.Marshal(tool.TOOLLIST); err == nil {
-		toolsDesc = string(json_)
-	}
-
-	systemMsg = fmt.Sprintf(systemMsg, toolsDesc)
-
-	return systemMsg
+	return INITMESSAGE
 }
