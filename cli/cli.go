@@ -17,7 +17,7 @@ func StartChat() {
 	sessionData := sessionmanager.GetOrCreateSessionManager().CreateSession()
 	sessionId = sessionData.SessionId
 
-	thinkTank := thinktank.GetThinkTank()
+	thinkTank := thinktank.GetMasterThinkTank()
 
 	greet, err := thinkTank.StartConversation(sessionId)
 	if err != nil {
